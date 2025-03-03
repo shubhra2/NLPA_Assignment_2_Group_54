@@ -1,34 +1,27 @@
 import gradio as gr
-import time
-import torch
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import MarianMTModel, MarianTokenizer
 
-# Global variables to store model and tokenizer
-model = None
-tokenizer = None
+# Global variables to store models and tokenizers
+marian_model = None
+marian_tokenizer = None
 
-# Load the base mT5 model from Hugging Face
+# Model name
+MARIAN_MODEL_NAME = "Helsinki-NLP/opus-mt-en-hi"
 
-
-def load_mt5_model():
-    global model, tokenizer
+def load_models():
+    global marian_model, marian_tokenizer
     try:
-        print("Loading mT5 base model from Hugging Face...")
-        # Using the base variant of mT5
-        model_name = "rooftopcoder/mT5_base_English_Gujrati"
+        print("Loading models from Hugging Face...")
 
-        # Load tokenizer and model
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_name, trust_remote_code=True)
-        model = AutoModelForSeq2SeqLM.from_pretrained(
-            model_name, trust_remote_code=True)
+        # Load MarianMT
+        marian_tokenizer = MarianTokenizer.from_pretrained(MARIAN_MODEL_NAME)
+        marian_model = MarianMTModel.from_pretrained(MARIAN_MODEL_NAME)
 
-        print("Model loaded successfully!")
-        return model, tokenizer
+        print("Models loaded successfully!")
+        return True
     except Exception as e:
-        print(f"Error loading mT5 model: {e}")
-        return None, None
-
+        print(f"Error loading models: {e}")
+        return False
 
 # Dictionary for language codes
 language_codes = {
@@ -57,17 +50,9 @@ transliteration_examples = {
 
 def translate(input_text, source_lang, target_lang):
     """
-    Translates text from source language to target language using mT5
-
-    Args:
-        input_text: Text to translate
-        source_lang: Source language code
-        target_lang: Target language code
-
-    Returns:
-        Translated text
+    Translates text using either mT5 or MarianMT based on language pair
     """
-    global model, tokenizer
+    global marian_model, marian_tokenizer
 
     # Handle edge cases
     if not input_text.strip():
@@ -76,42 +61,18 @@ def translate(input_text, source_lang, target_lang):
     if source_lang == target_lang:
         return "Source and target languages are the same. No translation needed."
 
-    # Ensure model is loaded
-    if model is None or tokenizer is None:
-        model, tokenizer = load_mt5_model()
-        if model is None or tokenizer is None:
-            return "Error: Could not load translation model."
-
     try:
-        # Format input for mT5 translation task
-        task_prefix = f"translate {source_lang} to {target_lang}: "
-        input_text_formatted = task_prefix + input_text
+        # Use MarianMT for English-Hindi translation
+        if (source_lang == "en" and target_lang == "hi") or (source_lang == "hi" and target_lang == "en"):
+            tokens = marian_tokenizer(input_text, return_tensors="pt", padding=True)
+            translated_tokens = marian_model.generate(**tokens)
+            translated_text = marian_tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
 
-        # Tokenize the input
-        inputs = tokenizer(input_text_formatted,
-                           return_tensors="pt", max_length=512, truncation=True)
-
-        # Generate translation with beam search
-        outputs = model.generate(
-            inputs.input_ids,
-            max_length=100,  # Adjust based on your needs
-            num_beams=4,
-            length_penalty=0.6,
-            early_stopping=True
-        )
-
-        # Decode the translation
-        translated_text = tokenizer.decode(
-            outputs[0], skip_special_tokens=True)
-
-        # Note: mT5 might not be fine-tuned for all these language pairs,
-        # so results will vary in quality
         return translated_text
 
     except Exception as e:
         print(f"Translation error: {e}")
-        # Fallback to placeholder for demo purposes
-        return f"[Demo mode: This would be the {language_names[source_lang]} to {language_names[target_lang]} translation of: '{input_text}']"
+        return f"Error during translation: {str(e)}"
 
 # Helper function for handling the UI translation process
 
@@ -215,7 +176,7 @@ def create_interface():
         """)
 
     # Preload the model when the interface starts
-    load_mt5_model()
+    load_models()
 
     return demo
 
