@@ -172,3 +172,5 @@ cython_debug/
 
 # Gradio
 .gradio/
+results/
+final_model/

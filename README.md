@@ -1,15 +1,15 @@
-# Neural Machine Translation for Indian Languages
+# Neural Machine Translation for English-Hindi
 
-This project implements a Neural Machine Translation system for Indian languages using the MarianMT model, with a user-friendly Gradio interface.
+This project implements a Neural Machine Translation system for English-Hindi translation using the MarianMT model (Helsinki-NLP/opus-mt-en-hi), with a user-friendly Gradio interface.
 
 ![NMT UI Screenshot](assets/nmt_ui_screenshot.png)
 
 ## Features
 
-- Translate between multiple Indian languages
-- Support for English, Hindi, Tamil, Telugu, Bengali, Marathi, and Gujarati
+- Bidirectional translation between English and Hindi
 - User-friendly web interface built with Gradio
 - Example translations included
+- Built on Helsinki-NLP's MarianMT model
 
 ## Installation
 
@@ -43,8 +43,7 @@ python nmt_ui.py
 
 ## Supported Language Pairs
 
-- English ↔ Hindi (using MarianMT)
-- Other language pairs (work in progress)
+- English -> Hindi (using Helsinki-NLP/opus-mt-en-hi MarianMT model)
 
 ## Project Structure
 
