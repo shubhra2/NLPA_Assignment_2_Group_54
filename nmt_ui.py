@@ -1,15 +1,16 @@
 import gradio as gr
+from huggingface_hub import HfFolder
 from transformers import MarianMTModel, MarianTokenizer
 from indic_transliteration import sanscript
-from indic_transliteration.sanscript import SchemeMap, SCHEMES, transliterate
+from indic_transliteration.sanscript import transliterate
 import torch  # Add this import at the top with other imports
 
 # Global variables to store models and tokenizers
 marian_model = None
 marian_tokenizer = None
-
+token = HfFolder.get_token()
 # Model name
-MARIAN_MODEL_NAME = "./final_model"
+MARIAN_MODEL_NAME = "rooftopcoder/opus-mt-en-hi-samanantar-100k"
 
 
 def load_models():
@@ -22,8 +23,8 @@ def load_models():
         print(f"Using device: {device}")
 
         # Load MarianMT
-        marian_tokenizer = MarianTokenizer.from_pretrained(MARIAN_MODEL_NAME)
-        marian_model = MarianMTModel.from_pretrained(MARIAN_MODEL_NAME)
+        marian_tokenizer = MarianTokenizer.from_pretrained(MARIAN_MODEL_NAME, token=token)
+        marian_model = MarianMTModel.from_pretrained(MARIAN_MODEL_NAME, token=token)
 
         # Move model to GPU if available
         marian_model = marian_model.to(device)
@@ -65,7 +66,14 @@ def translate(input_text, source_lang, target_lang):
     """
     Translates text using MarianMT for English-Hindi translation
     """
+
     global marian_model, marian_tokenizer
+
+    # Check if models are loaded, if not load them
+    if marian_model is None or marian_tokenizer is None:
+        success = load_models()
+        if not success:
+            return "Error: Failed to load translation models"
 
     # Handle edge cases
     if not input_text.strip():
@@ -228,9 +236,6 @@ def create_interface():
         - "aap kaise ho" → "आप कैसे हो"
         - "mera naam" → "मेरा नाम"
         """)
-
-    # Preload the model when the interface starts
-    load_models()
 
     return demo
 
