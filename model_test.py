@@ -1,14 +1,17 @@
 import torch
+from huggingface_hub import HfFolder
 from transformers import MarianMTModel, MarianTokenizer
 
+token = HfFolder.get_token()
 # Check if GPU is available
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Load the trained model
-model_name = "./final_model"  # Path to saved model
-tokenizer = MarianTokenizer.from_pretrained(model_name)
+model_name = "rooftopcoder/opus-mt-en-hi-samanantar-100k"  # Path to saved model
+tokenizer = MarianTokenizer.from_pretrained(model_name, token=token)
 model = MarianMTModel.from_pretrained(
-    model_name).to(device)  # Move model to GPU
+    # Move model to GPU
+    model_name, token=token).to(device)
 
 
 def translate_text(text):

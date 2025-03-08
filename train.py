@@ -1,3 +1,4 @@
+from huggingface_hub import HfApi, HfFolder
 import torch
 from transformers import MarianMTModel, MarianTokenizer, Trainer, TrainingArguments
 from datasets import load_dataset, DatasetDict
@@ -24,8 +25,6 @@ model = MarianMTModel.from_pretrained(
     model_name).to(device)  # Move model to GPU
 
 # ✅ Tokenization function for Samanantar dataset
-
-
 def tokenize_function(examples):
     source_texts = examples["src"]  # English text
     target_texts = examples["tgt"]  # Hindi text
@@ -80,3 +79,16 @@ trainer.train()
 
 # ✅ Save final model
 trainer.save_model("./final_model")
+
+# Push the trained model to Huggingface Hub
+# Initialize API and upload
+api = HfApi()
+token = HfFolder.get_token()
+
+api.upload_folder(
+        folder_path="./final_model",
+        path_in_repo="",
+        repo_id="rooftopcoder/opus-mt-en-hi-samanantar-100k",
+        repo_type="model",
+        token=token
+    )
