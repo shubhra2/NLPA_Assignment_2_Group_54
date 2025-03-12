@@ -6,48 +6,58 @@ from indic_transliteration.sanscript import transliterate
 import torch  # Add this import at the top with other imports
 
 # Global variables to store models and tokenizers
-marian_model = None
-marian_tokenizer = None
+models = {}
+tokenizers = {}
 token = HfFolder.get_token()
-# Model name
-MARIAN_MODEL_NAME = "rooftopcoder/opus-mt-en-hi-samanantar-100k"
 
+# Model configurations
+MODEL_CONFIGS = {
+    "en-hi": {
+        "model_path": "rooftopcoder/opus-mt-en-hi-samanantar-finetuned",
+        "name": "English to Hindi"
+    },
+    "hi-en": {
+        "model_path": "rooftopcoder/opus-mt-hi-en-samanantar-finetuned",
+        "name": "Hindi to English"
+    },
+    "en-mr": {
+        "model_path": "rooftopcoder/opus-mt-en-mr-samanantar-finetuned",
+        "name": "English to Marathi"
+    },
+    "mr-en": {
+        "model_path": "rooftopcoder/opus-mt-mr-en-samanantar-finetuned",
+        "name": "Marathi to English"
+    }
+}
 
-def load_models():
-    global marian_model, marian_tokenizer
-    try:
-        print("Loading models from Hugging Face...")
-
-        # Check if CUDA is available
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {device}")
-
-        # Load MarianMT
-        marian_tokenizer = MarianTokenizer.from_pretrained(MARIAN_MODEL_NAME, token=token)
-        marian_model = MarianMTModel.from_pretrained(MARIAN_MODEL_NAME, token=token)
-
-        # Move model to GPU if available
-        marian_model = marian_model.to(device)
-
-        print("Models loaded successfully!")
-        return True
-    except Exception as e:
-        print(f"Error loading models: {e}")
-        return False
-
-
-# Update language codes dictionary to only include English and Hindi
+# Update language codes dictionary
 language_codes = {
     "English": "en",
-    "Hindi": "hi"
+    "Hindi": "hi",
+    "Marathi": "mr"
 }
 
 # Reverse dictionary for display purposes
 language_names = {v: k for k, v in language_codes.items()}
 
+def load_models():
+    try:
+        print("Loading models from local storage...")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {device}")
+
+        for direction, config in MODEL_CONFIGS.items():
+            print(f"Loading {config['name']} model...")
+            tokenizers[direction] = MarianTokenizer.from_pretrained(config["model_path"], token=token)
+            models[direction] = MarianMTModel.from_pretrained(config["model_path"], token=token).to(device)
+
+        print("All models loaded successfully!")
+        return True
+    except Exception as e:
+        print(f"Error loading models: {e}")
+        return False
+
 # Function to perform transliteration from English to Hindi
-
-
 def transliterate_text(text, from_scheme=sanscript.ITRANS, to_scheme=sanscript.DEVANAGARI):
     """
     Transliterates text from one script to another
@@ -60,87 +70,57 @@ def transliterate_text(text, from_scheme=sanscript.ITRANS, to_scheme=sanscript.D
         return text
 
 # Function to perform translation with MarianMT
-
-
 def translate(input_text, source_lang, target_lang):
     """
-    Translates text using MarianMT for English-Hindi translation
+    Translates text using MarianMT models
     """
+    direction = f"{source_lang}-{target_lang}"
+    if direction not in models or direction not in tokenizers:
+        return "Error: Unsupported language pair"
 
-    global marian_model, marian_tokenizer
-
-    # Check if models are loaded, if not load them
-    if marian_model is None or marian_tokenizer is None:
-        success = load_models()
-        if not success:
-            return "Error: Failed to load translation models"
-
-    # Handle edge cases
     if not input_text.strip():
         return "Error: Please enter some text to translate."
 
-    if source_lang == target_lang:
-        return "Source and target languages are the same. No translation needed."
-
     try:
-        # Get the device the model is on
-        device = next(marian_model.parameters()).device
-
-        # Tokenize and move to same device as model
-        tokens = marian_tokenizer(input_text, return_tensors="pt",
-                                padding=True, truncation=True)
+        device = next(models[direction].parameters()).device
+        tokens = tokenizers[direction](input_text, return_tensors="pt", padding=True, truncation=True)
         tokens = {k: v.to(device) for k, v in tokens.items()}
 
-        # Generate translation
-        translated = marian_model.generate(**tokens)
-
-        # Move back to CPU for decoding
+        translated = models[direction].generate(**tokens)
         translated = translated.cpu()
-        output = marian_tokenizer.batch_decode(
-            translated, skip_special_tokens=True)
+        output = tokenizers[direction].batch_decode(translated, skip_special_tokens=True)
         return output[0]
-
     except Exception as e:
         print(f"Translation error: {e}")
         return f"Error during translation: {str(e)}"
 
 # Helper function for handling the UI translation process
-
-
 def perform_translation(input_text, source_lang, target_lang):
     """Wrapper function for the Gradio interface"""
     source_code = language_codes[source_lang]
     target_code = language_codes[target_lang]
 
-    # If the source is English and target is Hindi, check for transliteration
-    # This will detect romanized Hindi text and convert it to Devanagari
-    if source_code == "en" and target_code == "hi":
-        # Check if the input might be romanized Hindi (contains common Hindi words)
-        common_hindi_words = ["namaste", "dhanyavad",
-                              "kaise", "hai", "aap", "tum", "main"]
+    # Handle transliteration for Hindi and Marathi
+    if source_code == "en" and target_code in ["hi", "mr"]:
+        common_indic_words = {
+            "hi": ["namaste", "dhanyavad", "kaise", "hai", "aap", "tum", "main"],
+            "mr": ["namaskar", "dhanyawad", "kase", "ahe", "tumhi", "mi"]
+        }
+
         words = input_text.lower().split()
-
-        # If any common Hindi word is found in English text, offer transliteration
-        if any(word in common_hindi_words for word in words):
-            # Perform transliteration
+        if any(word in common_indic_words.get(target_code, []) for word in words):
             transliterated = transliterate_text(input_text)
-
-            # If transliteration changed the text, return both transliteration and translation
             if transliterated != input_text:
                 translation = translate(input_text, source_code, target_code)
                 return f"Transliterated: {transliterated}\n\nTranslated: {translation}"
 
-    # Standard translation (no transliteration needed)
     return translate(input_text, source_code, target_code)
 
 # Create Gradio interface
-
-
 def create_interface():
     with gr.Blocks(title="Neural Machine Translation - Indian Languages") as demo:
         gr.Markdown("# Neural Machine Translation for Indian Languages")
-        gr.Markdown(
-            "Translate between multiple Indian languages using mT5 model")
+        gr.Markdown("Translate between English, Hindi, and Marathi using MarianMT models")
 
         with gr.Row():
             with gr.Column():
@@ -149,7 +129,6 @@ def create_interface():
                     label="Source Language",
                     value="English"
                 )
-
                 input_text = gr.Textbox(
                     lines=5,
                     placeholder="Enter text to translate...",
@@ -162,21 +141,14 @@ def create_interface():
                     label="Target Language",
                     value="Hindi"
                 )
-
                 output_text = gr.Textbox(
                     lines=5,
                     label="Translated Text",
                     placeholder="Translation will appear here..."
                 )
 
-        # Add translation button
-        with gr.Row():
-            translate_btn = gr.Button("Translate", variant="primary")
-
-        # Add transliteration button (new)
-        with gr.Row():
-            transliterate_btn = gr.Button(
-                "Transliterate Only", variant="secondary")
+        translate_btn = gr.Button("Translate", variant="primary")
+        transliterate_btn = gr.Button("Transliterate Only", variant="secondary")
 
         # Event handlers
         translate_btn.click(
@@ -199,15 +171,13 @@ def create_interface():
             api_name="transliterate"
         )
 
-        # Update examples to include transliteration examples
+        # Examples for all language pairs
         gr.Examples(
             examples=[
                 ["Hello, how are you?", "English", "Hindi"],
-                ["What's your name?", "English", "Hindi"],
-                # Transliteration example
-                ["namaste mere dost", "English", "Hindi"],
-                # Transliteration example
-                ["aap kaise ho", "English", "Hindi"],
+                ["नमस्ते, आप कैसे हैं?", "Hindi", "English"],
+                ["Hello, how are you?", "English", "Marathi"],
+                ["नमस्कार, तुम्ही कसे आहात?", "Marathi", "English"],
             ],
             inputs=[input_text, source_lang, target_lang],
             fn=perform_translation,
@@ -215,32 +185,26 @@ def create_interface():
             cache_examples=True
         )
 
-        # Update model information markdown
         gr.Markdown("""
         ## Model Information
 
-        This demo uses the MarianMT model from Hugging Face Transformers.
+        This demo uses fine-tuned MarianMT models for translation between:
+        - English ↔️ Hindi
+        - English ↔️ Marathi
 
-        ### Notes:
-        - The model supports English-Hindi translation
-        - Based on the Helsinki-NLP/opus-mt-en-hi model
-        - Optimized for English -> Hindi translation pairs
-        - Now includes transliteration support for Romanized Hindi text
-
-        ### Supported Features:
-        - English -> Hindi translation
-        - Romanized Hindi -> Devanagari Hindi transliteration
-
-        ### Examples of Transliteration:
-        - "namaste" → "नमस्ते"
-        - "aap kaise ho" → "आप कैसे हो"
-        - "mera naam" → "मेरा नाम"
+        ### Features:
+        - Bidirectional translation support
+        - Transliteration support for romanized Indic text
+        - Optimized models for each language pair
         """)
 
     return demo
 
-
 # Launch the interface
 if __name__ == "__main__":
-    demo = create_interface()
-    demo.launch(share=False)
+    # Load all models before launching the interface
+    if load_models():
+        demo = create_interface()
+        demo.launch(share=False)
+    else:
+        print("Failed to load models. Please check the model paths and try again.")
